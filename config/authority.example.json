@@ -1,0 +1,86 @@
+{
+  "_about": "Example authority settings for agents working Linear issues. Copy this to instance/authority.json (or point AUTHORITY_FILE at your own file) and edit it. Read by scripts/lib/authority.mjs. Anything the file does not clearly allow is refused.",
+  "default_tier": "live",
+  "tiers": {
+    "early-dev": {
+      "_about": "No production risk. Agents carry work to a deployed result.",
+      "push_branch": true,
+      "open_pr": true,
+      "merge": true,
+      "deploy": true,
+      "merge_requires": [
+        "checks_pass",
+        "verifier_pass"
+      ]
+    },
+    "early-dev-no-checks": {
+      "_about": "Same as early-dev, for repos with no automated checks. The merge waits on the verifier only.",
+      "push_branch": true,
+      "open_pr": true,
+      "merge": true,
+      "deploy": true,
+      "merge_requires": [
+        "verifier_pass"
+      ]
+    },
+    "live": {
+      "_about": "Agents stop at a pull request. The owner merges.",
+      "push_branch": true,
+      "open_pr": true,
+      "merge": false,
+      "deploy": false,
+      "merge_requires": []
+    },
+    "client": {
+      "_about": "Client work. Never routed to these agents.",
+      "push_branch": false,
+      "open_pr": false,
+      "merge": false,
+      "deploy": false,
+      "merge_requires": []
+    }
+  },
+  "repos": {
+    "_about": "One line per repo folder under the code folder: \"name\": \"tier\". A repo not listed here gets default_tier.",
+    "example-sandbox": "early-dev",
+    "example-client-site": "client"
+  },
+  "deploy_on_merge": {
+    "_about": "What a merge to main ships, per repo, so the runner can say so in its comment. It describes only: nothing here makes the runner deploy. ships is null when no deploy path is known.",
+    "example-sandbox": {
+      "ships": null,
+      "gap": "This example repo has no deploy path."
+    }
+  },
+  "architect_may_decide": [
+    "scope",
+    "approach",
+    "naming",
+    "which_agent",
+    "retry_or_split",
+    "close_stale"
+  ],
+  "always_owner": [
+    "new_spend_or_vendor",
+    "secrets_or_credentials",
+    "delete_data_or_repo",
+    "dns_or_domains",
+    "public_release",
+    "agent_permissions",
+    "client_data"
+  ],
+  "limits": {
+    "per_run_usd": 2,
+    "per_day_usd": 30,
+    "max_retries": 2
+  },
+  "backends": {
+    "_about": "Which agent builds an issue. claude is the default and needs no entry. A backend runs only when enabled is true.",
+    "default": "claude"
+  },
+  "notify_owner_on": [
+    "feature_ready_to_test",
+    "bug_fixed",
+    "decision_is_yours"
+  ]
+}

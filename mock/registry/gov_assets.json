@@ -1,0 +1,112 @@
+[
+  {
+    "asset_id": "ast-900001",
+    "asset_type": "workflow",
+    "environment": "local",
+    "ref_id": "syn0001",
+    "name": "form.registry-approve",
+    "agent_id": "agt-registrar",
+    "role": "form",
+    "status": "keep",
+    "destiny": "Keep: registry write path."
+  },
+  {
+    "asset_id": "ast-900002",
+    "asset_type": "workflow",
+    "environment": "local",
+    "ref_id": "syn0002",
+    "name": "gw.board-read",
+    "agent_id": "agt-board-read",
+    "role": "gateway",
+    "status": "keep",
+    "destiny": ""
+  },
+  {
+    "asset_id": "ast-900003",
+    "asset_type": "workflow",
+    "environment": "local",
+    "ref_id": "syn0003",
+    "name": "gw.registry-read",
+    "agent_id": "agt-registrar",
+    "role": "gateway",
+    "status": "keep",
+    "destiny": ""
+  },
+  {
+    "asset_id": "ast-900004",
+    "asset_type": "workflow",
+    "environment": "local",
+    "ref_id": "syn0004",
+    "name": "tpl.container",
+    "agent_id": "agt-advisor-local",
+    "role": "template",
+    "status": "keep",
+    "destiny": ""
+  },
+  {
+    "asset_id": "ast-900005",
+    "asset_type": "workflow",
+    "environment": "local",
+    "ref_id": "syn0005",
+    "name": "advisor.orchestrator",
+    "agent_id": "agt-advisor-local",
+    "role": "infra",
+    "status": "registered",
+    "destiny": ""
+  },
+  {
+    "asset_id": "ast-900006",
+    "asset_type": "workflow",
+    "environment": "local",
+    "ref_id": "syn0006",
+    "name": "advisor.worker",
+    "agent_id": "agt-advisor-local",
+    "role": "infra",
+    "status": "registered",
+    "destiny": ""
+  },
+  {
+    "asset_id": "ast-900007",
+    "asset_type": "workflow",
+    "environment": "local",
+    "ref_id": "syn0007",
+    "name": "builder.orchestrator",
+    "agent_id": "agt-builder-local",
+    "role": "infra",
+    "status": "registered",
+    "destiny": ""
+  },
+  {
+    "asset_id": "ast-900008",
+    "asset_type": "table",
+    "environment": "local",
+    "ref_id": "syn0008",
+    "name": "board_tasks",
+    "agent_id": "agt-orchestrator",
+    "role": "utility",
+    "status": "keep",
+    "destiny": ""
+  },
+  {
+    "asset_id": "ast-900009",
+    "asset_type": "table",
+    "environment": "local",
+    "ref_id": "syn0009",
+    "name": "registry_ledger",
+    "agent_id": "agt-registrar",
+    "role": "writer",
+    "status": "keep",
+    "destiny": ""
+  },
+  {
+    "asset_id": "ast-900010",
+    "asset_type": "workflow",
+    "environment": "local",
+    "ref_id": "syn0010",
+    "name": "old.experiment",
+    "agent_id": "agt-builder-local",
+    "role": "experiment",
+    "status": "retired",
+    "destiny": "Retired: replaced by the builder container."
+  }
+]

@@ -1,0 +1,187 @@
+# The cloud Linear agent: one role (architect, builder or verifier) on one Linear issue, per run.
+# Started by the n8n receiver (gw.linear-hook) or the sweep (linear-sweep.yml) through workflow_dispatch. Nothing else triggers it.
+# Input contract and setup: docs/linear-runner.md, "Cloud worker". The code: scripts/linear-job.mjs.
+#
+# Rules this file follows:
+#   - No `${{ }}` inside a `run:` script. Inputs reach scripts through `env:`, so comment text cannot become shell code.
+#   - Every checkout sets persist-credentials: false, so no later step inherits a git token.
+#   - No step that runs a model holds a GitHub token. The work step (the builder's build, the verifier's verdict) has none.
+#     The GitHub write secret, AGENT_GH_WRITE_TOKEN, is only in the builder's publish step and the verifier's merge step.
+#     A fine-grained token cannot allow a push but refuse a merge, so the builder's publish step needs the same secret;
+#     the model never runs in that step.
+#   - Only main may run it, because secrets go to whatever workflow file is on the dispatched branch.
+name: Linear agent
+run-name: ${{ inputs.role }} ${{ inputs.issue }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      role:
+        description: Which agent runs
+        type: choice
+        options:
+          - architect
+          - builder
+          - verifier
+        required: true
+      issue:
+        description: The Linear issue, like ENG-12
+        type: string
+        required: true
+      session:
+        description: The Linear agent session id. Empty means the job finds or opens one.
+        type: string
+        required: false
+        default: ''
+      prompt:
+        description: A comment for the agent (a prompted session event). Optional.
+        type: string
+        required: false
+        default: ''
+      repo:
+        description: The target repo name, on cloud_repos in the authority file
+        type: string
+        required: true
+
+# Nothing by default. The job asks for what it needs.
+permissions: {}
+
+# One run at a time per issue. A newer dispatch waits; GitHub keeps only one waiting run per group and drops older waiting ones,
+# which is safe because every run reads the issue's current state when it starts (scripts/linear-job.mjs).
+concurrency:
+  group: linear-issue-${{ inputs.issue }}
+  cancel-in-progress: false
+
+jobs:
+  agent:
+    name: Agent
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read # the run count in the gate step
+    env:
+      # The role's own Linear app credentials, and no other role's. scripts/linear-job.mjs mints a token from them in each step.
+      # These are Linear, not GitHub, credentials; the model's environment drops every *SECRET* name (childEnv).
+      LINEAR_ARCHITECT_CLIENT_ID: ${{ inputs.role == 'architect' && secrets.LINEAR_ARCHITECT_CLIENT_ID || '' }}
+      LINEAR_ARCHITECT_CLIENT_SECRET: ${{ inputs.role == 'architect' && secrets.LINEAR_ARCHITECT_CLIENT_SECRET || '' }}
+      LINEAR_BUILDER_CLIENT_ID: ${{ inputs.role == 'builder' && secrets.LINEAR_BUILDER_CLIENT_ID || '' }}
+      LINEAR_BUILDER_CLIENT_SECRET: ${{ inputs.role == 'builder' && secrets.LINEAR_BUILDER_CLIENT_SECRET || '' }}
+      LINEAR_VERIFIER_CLIENT_ID: ${{ inputs.role == 'verifier' && secrets.LINEAR_VERIFIER_CLIENT_ID || '' }}
+      LINEAR_VERIFIER_CLIENT_SECRET: ${{ inputs.role == 'verifier' && secrets.LINEAR_VERIFIER_CLIENT_SECRET || '' }}
+      AGENT_LOOP_ENABLED: ${{ vars.AGENT_LOOP_ENABLED }}
+      ROLE: ${{ inputs.role }}
+      ISSUE: ${{ inputs.issue }}
+      REPO: ${{ inputs.repo }}
+      LINEAR_JOB_CHECKOUT: ${{ github.workspace }}/work/${{ inputs.repo }}
+    steps:
+      - name: Check the branch and the inputs
+        env:
+          REF: ${{ github.ref }}
+          SESSION: ${{ inputs.session }}
+        run: |
+          [ "$REF" = "refs/heads/main" ] || { echo "Dispatch this workflow from main only (got $REF)." >&2; exit 1; }
+          [[ "$ISSUE" =~ ^[A-Za-z][A-Za-z0-9]*-[0-9]+$ ]] || { echo "issue must look like ENG-12." >&2; exit 1; }
+          [[ "$REPO" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$ ]] || { echo "repo must be a plain repo name." >&2; exit 1; }
+          [[ "$SESSION" =~ ^[A-Za-z0-9-]{0,64}$ ]] || { echo "session must be a Linear id." >&2; exit 1; }
+
+      - name: Check out agent-board
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: agent-board
+          persist-credentials: false
+
+      - name: Set up Node 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+
+      # Before the target checkout uses AGENT_GH_TOKEN: the repo must be on cloud_repos. No token in this step.
+      - name: Check the repo is on cloud_repos
+        working-directory: agent-board
+        # The authority loader picks the file (AUTHORITY_FILE, instance/authority.json, or the public example), as the job does.
+        run: node --input-type=module -e 'import { loadAuthority } from "./scripts/lib/authority.mjs"; if (!(loadAuthority().cloud_repos ?? []).includes(process.env.REPO)) { console.error(`${process.env.REPO} is not on cloud_repos.`); process.exit(1) }'
+
+      - name: Check out the target repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: ${{ github.repository_owner }}/${{ inputs.repo }}
+          token: ${{ secrets.AGENT_GH_TOKEN }}
+          path: work/${{ inputs.repo }}
+          fetch-depth: 0 # every branch, so a retry finds origin/linear/<id>-run without a fetch
+          persist-credentials: false
+
+      - name: Install the claude CLI, pnpm and loop-verifier
+        env:
+          CLAUDE_CODE_VERSION: 2.1.318
+        run: |
+          npm install -g --no-audit --no-fund "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION"
+          corepack enable
+          mkdir -p "$HOME/.claude/agents"
+          cp agent-board/instance/deploy/agents/loop-verifier.md "$HOME/.claude/agents/loop-verifier.md"
+          git config --global user.name "Linear agent"
+          git config --global user.email "linear-agent@users.noreply.github.com"
+
+      # Egress allowlist (same script as runner-core.yml). On unless the repo variable LINEAR_AGENT_EGRESS is off, which is
+      # for the first live run only, to find the Max-token hosts (TODO in scripts/linear-egress-hosts.txt). No env, no secrets.
+      - name: Limit outbound hosts
+        if: ${{ vars.LINEAR_AGENT_EGRESS != 'off' }}
+        timeout-minutes: 3
+        run: sudo timeout 120 python3 agent-board/scripts/runner-egress.py apply --hosts agent-board/scripts/linear-egress-hosts.txt
+
+      # Kill switch, run limit, cloud_repos, and "is this role the issue's delegate". Its token is this repo's own, for the run count.
+      - name: Gate
+        id: gate
+        env:
+          SESSION: ${{ inputs.session }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node agent-board/scripts/linear-job.mjs --role "$ROLE" --issue "$ISSUE" --session "$SESSION" --repo "$REPO" --phase gate
+
+      # The model runs here. No GitHub token: the architect designs or rules, the builder builds and commits, the verifier gives the verdict.
+      - name: Work (architect, builder build, verifier verdict)
+        id: work
+        if: ${{ steps.gate.outputs.go == 'true' }}
+        env:
+          SESSION: ${{ steps.gate.outputs.session }}
+          # Through env, not the command line, so comment text can never look like a flag.
+          LINEAR_JOB_PROMPT: ${{ inputs.prompt }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          LINEAR_NOUS_API_KEY: ${{ inputs.role == 'builder' && secrets.LINEAR_NOUS_API_KEY || '' }}
+        run: node agent-board/scripts/linear-job.mjs --role "$ROLE" --issue "$ISSUE" --session "$SESSION" --repo "$REPO" --phase work
+
+      # Builder only: push linear/<id>-run, open or reuse the pull request, hand to the Verifier. No model runs here.
+      - name: Publish (builder)
+        id: publish
+        if: ${{ inputs.role == 'builder' && steps.work.outputs.publish == 'true' }}
+        env:
+          SESSION: ${{ steps.gate.outputs.session }}
+          GH_TOKEN: ${{ secrets.AGENT_GH_WRITE_TOKEN }}
+          BUILD_PUBLISH: ${{ steps.work.outputs.publish }}
+          BUILD_KIND: ${{ steps.work.outputs.kind }}
+          BUILD_SUMMARY: ${{ steps.work.outputs.summary }}
+        run: node agent-board/scripts/linear-job.mjs --role "$ROLE" --issue "$ISSUE" --session "$SESSION" --repo "$REPO" --phase publish
+
+      # Verifier only, after PASS: this code (not the model) merges the verified commit by the authority file, then waits for the deploy.
+      - name: Merge (verifier)
+        id: merge
+        if: ${{ inputs.role == 'verifier' && steps.work.outputs.verdict == 'PASS' }}
+        env:
+          SESSION: ${{ steps.gate.outputs.session }}
+          GH_TOKEN: ${{ secrets.AGENT_GH_WRITE_TOKEN }}
+          VERDICT: ${{ steps.work.outputs.verdict }}
+          VERIFIED_SHA: ${{ steps.work.outputs.sha }}
+        run: node agent-board/scripts/linear-job.mjs --role "$ROLE" --issue "$ISSUE" --session "$SESSION" --repo "$REPO" --phase merge
+
+      - name: Remove the outbound limit
+        if: ${{ always() && vars.LINEAR_AGENT_EGRESS != 'off' }}
+        timeout-minutes: 3
+        run: sudo timeout 120 python3 agent-board/scripts/runner-egress.py remove
+
+      # The backstop: a step failed, or the job timed out, and the job code did not already report it (outputs.reported).
+      - name: Report a crash to Linear
+        if: ${{ always() && (failure() || cancelled()) && steps.gate.outputs.reported != 'true' && steps.work.outputs.reported != 'true' && steps.publish.outputs.reported != 'true' && steps.merge.outputs.reported != 'true' }}
+        timeout-minutes: 3
+        env:
+          SESSION: ${{ steps.gate.outputs.session || inputs.session }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node agent-board/scripts/linear-job.mjs --report-crash --role "$ROLE" --issue "$ISSUE" --session "$SESSION" --run-url "$RUN_URL"

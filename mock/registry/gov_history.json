@@ -1,0 +1,85 @@
+[
+  {
+    "changed_at": "2026-10-12T10:00:00.000Z",
+    "changed_by": "Owner",
+    "field": "grade, verified_at, evidence",
+    "history_id": "his-900001",
+    "new_value": "verified; 2026-10-25; Synthetic fixture row.",
+    "old_value": "proposed; ",
+    "review_id": "rev-900005",
+    "row_key": "acc-900001"
+  },
+  {
+    "changed_at": "2026-10-12T10:00:00.000Z",
+    "changed_by": "Owner",
+    "field": "enforcement_point",
+    "history_id": "his-900002",
+    "new_value": "workflow_structure",
+    "old_value": "unknown",
+    "review_id": "rev-900007",
+    "row_key": "acc-900006"
+  },
+  {
+    "changed_at": "2026-10-12T10:00:00.000Z",
+    "changed_by": "Owner",
+    "field": "expected_version",
+    "history_id": "his-900003",
+    "new_value": "9ecb746f",
+    "old_value": "",
+    "review_id": "rev-900004",
+    "row_key": "agt-orchestrator"
+  },
+  {
+    "changed_at": "2026-10-12T10:00:00.000Z",
+    "changed_by": "Owner",
+    "field": "reachability",
+    "history_id": "his-900004",
+    "new_value": "outbound_only",
+    "old_value": "unknown",
+    "review_id": "rev-900003",
+    "row_key": "agt-advisor-hosted"
+  },
+  {
+    "changed_at": "2026-10-12T10:00:00.000Z",
+    "changed_by": "Owner",
+    "field": "*",
+    "history_id": "his-900005",
+    "new_value": "agt-advisor-hosted",
+    "old_value": "",
+    "review_id": "rev-900003",
+    "row_key": "agt-advisor-hosted"
+  },
+  {
+    "changed_at": "2026-10-25T13:40:00.000Z",
+    "changed_by": "Owner",
+    "field": "approval_rule",
+    "history_id": "his-900006",
+    "new_value": "owner_approves",
+    "old_value": "none",
+    "review_id": "rev-900002",
+    "row_key": "acc-900004",
+    "synthetic": true
+  },
+  {
+    "changed_at": "2026-10-25T13:40:00.000Z",
+    "changed_by": "Owner",
+    "field": "resource · action",
+    "history_id": "his-900007",
+    "new_value": "mail:send",
+    "old_value": "mail:read",
+    "review_id": "rev-900002",
+    "row_key": "acc-900004",
+    "synthetic": true
+  },
+  {
+    "changed_at": "2026-10-25T13:40:00.000Z",
+    "changed_by": "Owner",
+    "field": "scope",
+    "history_id": "his-900008",
+    "new_value": "allow-listed recipients",
+    "old_value": "",
+    "review_id": "rev-900002",
+    "row_key": "acc-900004",
+    "synthetic": true
+  }
+]

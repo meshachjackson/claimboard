@@ -1,0 +1,254 @@
+# The verifier: grades a claude/ branch the runner pushed. Phase C, docs/runner-actions.md. Plan: the ops repo
+# docs/plans/2026-11-05-p5-runner.md (doctrine rules 1 and 3: nothing grades its own work; deterministic first; the
+# LLM review uses a different model; the verifier never sees the worker's reasoning).
+#
+# Started by hand or by the orchestrator (workflow_dispatch). It gets three things of substance: the ticket id, the acceptance
+# criteria and the diff ref. job_id, step_id and runner_sha are ids only (callback address and which ops-repo
+# commit to run), each checked against a strict pattern. It never downloads the worker's artifact and never runs
+# code from the branch.
+#
+# Permissions: nothing at the top. The job that grades has contents: read only. Listing other open pull requests
+# needs pull-requests: read on a private repo, so that runs in its own job that checks out nothing and hands the list
+# over as a job output. No job can write.
+# Rules test/runner-verify.test.ts checks: no `${{ }}` in a run script, actions pinned to commit ids, every checkout
+# with persist-credentials: false.
+name: Runner verify
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: The orchestrator's job id. Letters, digits, - and _ only. Addresses the verdict callback.
+        type: string
+        required: true
+      step_id:
+        description: The board step being verified, like STP-NNNNNN. Addresses the verdict callback.
+        type: string
+        required: true
+      ticket:
+        description: Board card id, like TSK-NNNNNN
+        type: string
+        required: true
+      criteria:
+        description: The acceptance criteria, as a JSON array of strings
+        type: string
+        required: true
+      diff_ref:
+        description: The branch to grade, like claude/tsk-nnnnnn-make-the-header-sticky
+        type: string
+        required: true
+      runner_sha:
+        description: The ops-repo commit to run (40 hex characters, pinned on purpose)
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  guard:
+    name: Check inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check every input before anything runs
+        env:
+          REF: ${{ github.ref }}
+          JOB_ID: ${{ inputs.job_id }}
+          STEP_ID: ${{ inputs.step_id }}
+          TICKET: ${{ inputs.ticket }}
+          CRITERIA: ${{ inputs.criteria }}
+          DIFF_REF: ${{ inputs.diff_ref }}
+          RUNNER_SHA: ${{ inputs.runner_sha }}
+        run: |
+          [ "$REF" = "refs/heads/main" ] || { echo "Dispatch this workflow from main only (got $REF)." >&2; exit 1; }
+          # The routing ids are ids, nothing more: these patterns leave no room for worker output.
+          [[ "$JOB_ID" =~ ^[A-Za-z0-9_-]{1,64}$ ]] || { echo "job_id may hold only letters, digits, - and _ (64 at most)." >&2; exit 1; }
+          [[ "$STEP_ID" =~ ^STP-[0-9]{6,}$ ]] || { echo "step_id must look like STP-NNNNNN." >&2; exit 1; }
+          [[ "$RUNNER_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "runner_sha must be a full 40-character commit id." >&2; exit 1; }
+          [[ "$TICKET" =~ ^TSK-[0-9]{6}$ ]] || { echo "ticket must look like TSK-NNNNNN." >&2; exit 1; }
+          # The same branch rule as ops-repo publish.py BRANCH_RE: only branches the runner can push are graded.
+          [[ "$DIFF_REF" =~ ^claude/tsk-[0-9]{6}(-[a-z0-9]+){0,6}$ ]] || { echo "diff_ref must be a claude/tsk-... branch." >&2; exit 1; }
+          python3 -c 'import json, os, sys
+          c = json.loads(os.environ["CRITERIA"])
+          ok = isinstance(c, list) and c and all(isinstance(x, str) and x.strip() for x in c)
+          sys.exit(0 if ok else "criteria must be a non-empty JSON array of strings.")'
+
+  overlap:
+    name: List open PRs
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      prs: ${{ steps.list.outputs.prs }}
+    steps:
+      - name: List open pull requests and their files
+        id: list
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh pr list -R "$REPO" --state open --limit 100 --json number,title,headRefName,files > prs.json
+          # One compact line for the job output. Titles are cut short; the list is information, never a command.
+          printf 'prs=%s\n' "$(python3 -c 'import json; print(json.dumps([{**p, "title": p["title"][:120]} for p in json.load(open("prs.json"))], separators=(",", ":")))')" >> "$GITHUB_OUTPUT"
+
+  verify:
+    name: Verify (read-only)
+    needs:
+      - guard
+      - overlap
+    if: ${{ always() && needs.guard.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      WORK: ${{ github.workspace }}/work
+    outputs:
+      verdict: ${{ steps.verdict.outputs.verdict }}
+      tokens_in: ${{ steps.verdict.outputs.tokens_in }}
+      tokens_out: ${{ steps.verdict.outputs.tokens_out }}
+    steps:
+      - name: Check out agent-board (all branches, so the diff ref and main are both here)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: work/code/agent-board
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Check out ops-repo at the pinned commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: ${{ vars.OPS_REPO }}
+          ref: ${{ inputs.runner_sha }}
+          token: ${{ secrets.LOCAL_LAB_READ_TOKEN }}
+          path: work/ops-repo
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Refuse to run if a checkout kept a credential
+        run: |
+          bad=0
+          for repo in "$WORK/code/agent-board" "$WORK/ops-repo"; do
+            if git -C "$repo" config --local --list | grep -Eiq 'extraheader|credential|^include|insteadof'; then
+              echo "A credential or include is set in the git config of $repo." >&2
+              bad=1
+            fi
+          done
+          [ "$bad" = 0 ]
+
+      - name: Deterministic checks and merge check
+        env:
+          DIFF_REF: ${{ inputs.diff_ref }}
+          PRS_JSON: ${{ needs.overlap.outputs.prs }}
+          OVERLAP_RESULT: ${{ needs.overlap.result }}
+        run: |
+          mkdir -p "$WORK/out"
+          if [ "$OVERLAP_RESULT" != success ] || [ -z "$PRS_JSON" ]; then
+            echo "::warning::The open-PR list is unavailable ($OVERLAP_RESULT); overlaps are not listed."
+            PRS_JSON='[]'
+          fi
+          printf '%s' "$PRS_JSON" > "$WORK/prs.json"
+          cd "$WORK/ops-repo/runner"
+          python3 -m lonnie.verifier checks --repo "$WORK/code/agent-board" --branch "$DIFF_REF" \
+            --base origin/main --prs-json "$WORK/prs.json" --out "$WORK/out"
+
+      - name: Review on a different model
+        env:
+          LONNIE_ANTHROPIC_KEY: ${{ secrets.ANTHROPIC_RUNNER_KEY }}
+          CRITERIA: ${{ inputs.criteria }}
+        run: |
+          cd "$WORK/ops-repo/runner"
+          python3 -m lonnie.verifier review --checks "$WORK/out" --criteria-json "$CRITERIA" --out "$WORK/out"
+
+      - name: Read the verdict
+        id: verdict
+        if: ${{ always() }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          try:
+              v = json.load(open(os.path.join(os.environ["WORK"], "out", "verdict.json")))
+          except (OSError, ValueError):
+              v = {}
+          # No verdict file means the verifier broke, which is not a judgment of the change: INCONCLUSIVE.
+          verdict = v.get("verdict")
+          print("verdict=" + (verdict if verdict in ("PASS", "FAIL", "INCONCLUSIVE") else "INCONCLUSIVE"))
+          for key in ("tokens_in", "tokens_out"):
+              n = v.get(key)
+              print(key + "=" + (str(n) if isinstance(n, int) and n >= 0 else ""))
+          PY
+
+      - name: Write the verify summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "## Runner verify"
+            python3 - <<'PY'
+          import json, os
+          out = os.path.join(os.environ["WORK"], "out")
+          def load(name):
+              try:
+                  return json.load(open(os.path.join(out, name)))
+              except (OSError, ValueError):
+                  return {}
+          v, c = load("verdict.json"), load("checks.json")
+          print(f"- Verdict: `{v.get('verdict') or 'INCONCLUSIVE'}`" + (f" ({v['stop_reason']})" if v.get("stop_reason") else ""))
+          for x in c.get("checks", []):
+              print(f"- {x['name']}: {'ok' if x['ok'] else 'FAIL'} {str(x.get('detail', ''))[:200]}")
+          for p in c.get("overlapping_prs", []):
+              print(f"- Also touching these files: PR {p.get('number')} ({', '.join(p.get('files', [])[:10])})")
+          if v.get("summary"):
+              print("\n### Review\n" + str(v["summary"])[:4000])
+          PY
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the verify results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: verify-${{ inputs.ticket }}-${{ github.run_id }}
+          path: work/out/
+          retention-days: 90
+          if-no-files-found: warn
+
+  callback:
+    name: Tell the orchestrator the verdict
+    needs:
+      - guard
+      - verify
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the callback script
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          sparse-checkout: scripts/runner-callback.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Post the verdict callback
+        env:
+          VERA_CALLBACK_URL: ${{ secrets.VERA_CALLBACK_URL }}
+          CALLBACK_HEADER_PREFIX: ${{ vars.CALLBACK_HEADER_PREFIX }}
+          # The verifier has its own secret (runner plan), so a builder job cannot post a verifier verdict.
+          VERA_CALLBACK_SECRET: ${{ secrets.VERA_VERIFIER_CALLBACK_SECRET }}
+          JOB_ID: ${{ inputs.job_id }}
+          STEP_ID: ${{ inputs.step_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          VERDICT: ${{ needs.verify.outputs.verdict }}
+          TOKENS_IN: ${{ needs.verify.outputs.tokens_in }}
+          TOKENS_OUT: ${{ needs.verify.outputs.tokens_out }}
+        run: |
+          # A verdict the verify job did not reach (a failed guard, a crash, a cancel) is INCONCLUSIVE, which the orchestrator
+          # escalates at once (runner plan, section 9). PASS and FAIL come only from the verify job's own verdict.
+          case "$VERDICT" in PASS|FAIL|INCONCLUSIVE) ;; *) VERDICT=INCONCLUSIVE ;; esac
+          python3 -I scripts/runner-callback.py --job-id "$JOB_ID" --step-id "$STEP_ID" --status served \
+            --verdict "$VERDICT" --output-ref "$RUN_URL" --tokens-in "$TOKENS_IN" --tokens-out "$TOKENS_OUT"

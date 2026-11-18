@@ -1,0 +1,53 @@
+# Nuxt dev/build outputs
+.output
+.data
+.nuxt
+.nitro
+.cache
+dist
+
+# Node dependencies
+node_modules
+
+# Logs
+logs
+*.log
+
+# Misc
+.DS_Store
+.fleet
+.idea
+
+# Local env files
+.env
+.env.*
+!.env.example
+
+# Session memory plugin
+.remember
+
+# Vercel CLI link
+.vercel
+
+# Node's compile cache, written when tests run
+node-compile-cache/
+__pycache__/
+
+# Append to the .gitignore of a public repo.
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Instance values live in a fork, never upstream. Upstream ignores them so
+# nothing personal lands here by accident. A fork removes this line and
+# commits its own instance/ folder.
+instance/
+
+# Editor and OS noise
+.DS_Store
+.idea/
+.vscode/

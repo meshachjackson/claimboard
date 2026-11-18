@@ -1,0 +1,110 @@
+[
+  {
+    "note_id": "NTE-900001",
+    "task_id": "TSK-900002",
+    "step_id": "",
+    "author_id": "system",
+    "kind": "system",
+    "body": "Moved to Architecture by Owner",
+    "created_at": "2026-10-25T13:41:00.000Z"
+  },
+  {
+    "note_id": "NTE-900002",
+    "task_id": "TSK-900002",
+    "step_id": "STP-900002",
+    "author_id": "agt-advisor-local",
+    "kind": "status",
+    "body": "Claimed. Reading the pull-queue contract and the board plan first.",
+    "created_at": "2026-10-25T13:45:00.000Z"
+  },
+  {
+    "note_id": "NTE-900003",
+    "task_id": "TSK-900002",
+    "step_id": "STP-900002",
+    "author_id": "agt-advisor-local",
+    "kind": "proposal",
+    "body": "Plan for gov.board-write:\n1. Webhook trigger with the header credential.\n2. Resolve the caller from board_tokens; refuse unknown tokens.\n3. Check the op against gov_access and the column's roles_json.\n4. Switch on op; every write goes through the task-write workflow.\n5. One ledger row per call, refused calls included.\nCitations in ADV-900002.",
+    "created_at": "2026-10-25T14:10:00.000Z"
+  },
+  {
+    "note_id": "NTE-900004",
+    "task_id": "TSK-900002",
+    "step_id": "STP-900002",
+    "author_id": "agt-advisor-local",
+    "kind": "question",
+    "body": "My corpus has no gateway type yet. Should I plan gov.board-write against the Container checklist, or treat gateways as exempt until schema 1.4 lands?",
+    "created_at": "2026-10-25T14:12:00.000Z"
+  },
+  {
+    "note_id": "NTE-900005",
+    "task_id": "TSK-900003",
+    "step_id": "STP-900003",
+    "author_id": "agt-builder-local",
+    "kind": "status",
+    "body": "Attempt 2 failed the Verifier: the draft references a credential by id instead of by name.",
+    "created_at": "2026-10-24T21:00:00.000Z"
+  },
+  {
+    "note_id": "NTE-900006",
+    "task_id": "TSK-900003",
+    "step_id": "STP-900003",
+    "author_id": "system",
+    "kind": "system",
+    "body": "Step failed \u00b7 budget_exhausted \u00b7 the orchestrator filed the escalation",
+    "created_at": "2026-10-24T21:01:00.000Z"
+  },
+  {
+    "note_id": "NTE-900007",
+    "task_id": "TSK-900004",
+    "step_id": "",
+    "author_id": "system",
+    "kind": "system",
+    "body": "Moved to Build by Owner",
+    "created_at": "2026-10-25T13:00:00.000Z"
+  },
+  {
+    "note_id": "NTE-900008",
+    "task_id": "TSK-900004",
+    "step_id": "STP-900005",
+    "author_id": "agt-advisor-local",
+    "kind": "summary",
+    "body": "Consult PASS: the change class needs no new access row beyond the board rows already proposed.",
+    "created_at": "2026-10-25T13:09:00.000Z"
+  },
+  {
+    "note_id": "NTE-900009",
+    "task_id": "TSK-900004",
+    "step_id": "STP-900004",
+    "author_id": "agt-builder-local",
+    "kind": "status",
+    "body": "Claimed from pool:builder. Drafting list and claim first.",
+    "created_at": "2026-10-25T14:58:00.000Z"
+  },
+  {
+    "note_id": "NTE-900010",
+    "task_id": "TSK-900007",
+    "step_id": "STP-900007",
+    "author_id": "agt-builder-local",
+    "kind": "summary",
+    "body": "Draft board.seed-columns saved unpublished on the local instance. Verifier PASS (BLD-900007).",
+    "created_at": "2026-10-25T13:08:00.000Z"
+  },
+  {
+    "note_id": "NTE-900011",
+    "task_id": "TSK-900007",
+    "step_id": "",
+    "author_id": "system",
+    "kind": "system",
+    "body": "All required steps served \u00b7 auto-moved to Review",
+    "created_at": "2026-10-25T13:10:00.000Z"
+  },
+  {
+    "note_id": "NTE-900013",
+    "task_id": "TSK-900006",
+    "step_id": "",
+    "author_id": "system",
+    "kind": "system",
+    "body": "Assigned to Claude Code (MacBook) by Owner \u00b7 approval pending",
+    "created_at": "2026-10-25T14:22:00.000Z"
+  }
+]

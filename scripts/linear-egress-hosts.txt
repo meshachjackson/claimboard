@@ -1,0 +1,33 @@
+# Hosts the cloud Linear agent job (.github/workflows/linear-agent.yml) may reach on port 443 once its egress filter is on.
+# Same format and script as scripts/runner-egress-hosts.txt (scripts/runner-egress.py). One host per line. Adding a host is a
+# security change: it needs the owner's go-ahead.
+#
+# Kept from scripts/runner-egress-hosts.txt (runner-egress.py connects to the first four after the rules are in):
+github.com
+api.github.com
+api.anthropic.com
+registry.npmjs.org
+results-receiver.actions.githubusercontent.com
+#
+# Linear: the GraphQL API and the client-credentials token endpoint (scripts/lib/linear-api.mjs, linear-oauth.mjs).
+api.linear.app
+#
+# Nous Portal, for `agent:nous` issues (backends.nous.base_url in instance/authority.json).
+inference-api.nousresearch.com
+#
+# The docs sites the Architect may fetch: the link hosts in docs/architect-stack.md (docHosts in scripts/lib/architect-rule.mjs).
+docs.digitalocean.com
+docs.github.com
+docs.n8n.io
+linear.app
+nodejs.org
+nuxt.com
+platform.claude.com
+ui.nuxt.com
+vercel.com
+www.postgresql.org
+#
+# TODO (first live run): the hosts the claude CLI talks to when it signs in with the Max login token
+# (CLAUDE_CODE_OAUTH_TOKEN). Not confirmed yet. Run the first job with repo variable LINEAR_AGENT_EGRESS=off, read which hosts
+# it reached, add them here, then turn the filter back on. Candidates to confirm, not added: claude.ai, console.anthropic.com,
+# statsig.anthropic.com.

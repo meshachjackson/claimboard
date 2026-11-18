@@ -1,0 +1,288 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+/* Tokens from docs/design/README.md (direction B, Andon). Status and signal colors live in app/types/board.ts. */
+@theme static {
+  --font-sans: 'Barlow', system-ui, sans-serif;
+  --font-display: 'Barlow Condensed', 'Barlow', system-ui, sans-serif; /* signal numbers, page and column headings */
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace; /* task and step IDs only */
+
+  --color-ground: #E4E7EA; /* concrete */
+  --color-lane: #DCE0E4;
+  --color-line: #B8BFC8;
+  --color-rule: #0F1A2A; /* the 2px structural rules under the header and between zones */
+  --color-filterbar: #ECEEF1;
+  --color-input: #6B7585; /* field borders and switch tracks: 3:1 on every ground, lane and surface (WCAG 1.4.11) */
+  --color-ink: #0F1A2A;
+  --color-text2: #3A4558;
+  --color-text3: #4B5668;
+  --color-dash: #6B7585; /* dashes, dots and dashed pill borders: 3:1 */
+  --color-chip: #EEF0F3;
+  --color-accent: #2A4BD7; /* cobalt: links, focus, agents */
+  --color-approve: #2A4BD7;
+  --color-surface: #FFFFFF; /* tickets, panels, inputs */
+}
+
+/* Dark theme: Nuxt UI's color mode puts .dark on <html> (Settings: Light, Dark or System). */
+:root {
+  color-scheme: light;
+}
+.dark {
+  color-scheme: dark;
+  --color-ground: #0F1A2A;
+  --color-lane: #132033;
+  --color-line: #2C3A50;
+  --color-rule: #3A4A63;
+  --color-filterbar: #132033;
+  --color-input: #7080A0;
+  --color-ink: #E4E7EA;
+  --color-text2: #C3CAD5;
+  --color-text3: #9AA6B8;
+  --color-dash: #66758C;
+  --color-chip: #1C2940;
+  --color-accent: #8DA4FF;
+  --color-approve: #8DA4FF;
+  --color-surface: #172234;
+}
+
+/* Nuxt UI's muted and dimmed text (palette hints, counts) use the board's own secondary text color so they meet 4.5:1 (WCAG 1.4.3). */
+:root,
+.dark {
+  --ui-text-muted: var(--color-text3);
+  --ui-text-dimmed: var(--color-text3);
+}
+
+body {
+  margin: 0;
+  background: var(--color-ground);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+/* A board card is a paper ticket (direction B with A's card): a perforated top edge cut out of the surface color,
+   and a lift on the ground. The perforation is drawn, so it follows the theme. */
+.ab-ticket {
+  box-shadow: 0 1px 0 var(--color-line), 0 6px 12px -8px rgba(15, 26, 42, 0.35);
+}
+.ab-ticket::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -5px;
+  height: 6px;
+  background: radial-gradient(circle at 5px 0, transparent 3.5px, var(--color-surface) 4px) 0 0 / 10px 6px repeat-x;
+  pointer-events: none;
+}
+
+/* Placeholder text is real text: 4.5:1 (WCAG 1.4.3). */
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-text3);
+  opacity: 1;
+}
+
+button:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+@keyframes ab-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(42, 75, 215, 0.5); }
+  70% { box-shadow: 0 0 0 6px rgba(42, 75, 215, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(42, 75, 215, 0); }
+}
+
+.ab-pulse {
+  animation: ab-pulse 1.8s infinite;
+}
+
+/* Hide scrollbars on the phone tab strip and chip row. */
+.ab-row {
+  scrollbar-width: none;
+}
+.ab-row::-webkit-scrollbar {
+  display: none;
+}
+
+/* Native selects styled like the canvas. */
+.ab-select {
+  height: 40px;
+  border: 1px solid var(--color-input);
+  border-radius: 8px;
+  padding: 0 10px;
+  font-size: 13px;
+  color: var(--color-ink);
+  background: var(--color-surface);
+}
+
+/* Phone filter sheet: 44px touch targets. */
+.ab-stacked .ab-select {
+  height: 44px;
+  font-size: 15px;
+}
+
+/* ---------- Header refresh v3 (docs/design/refresh/README.md) ---------- */
+
+/* Bar search: 180px, widening to 280px on focus. */
+.ab-search {
+  flex: 0 1 180px;
+  transition: flex-basis 0.15s ease;
+}
+.ab-search:focus-within {
+  flex-basis: 280px;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+/* 1365px and below: pill labels, the New label, the / hint and Registry's Approvals label hide. */
+@media (max-width: 1365px) {
+  .ab-narrow-hide {
+    display: none !important;
+  }
+  .ab-search {
+    flex-basis: 150px;
+  }
+}
+/* 1099px and below: the Filters label and the active view's label hide too. */
+@media (max-width: 1099px) {
+  .ab-compact-hide {
+    display: none !important;
+  }
+  .ab-search {
+    flex-basis: 130px;
+  }
+}
+
+/* The live dot. */
+@keyframes ab-live {
+  0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5); }
+  70% { box-shadow: 0 0 0 5px rgba(34, 197, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+.ab-live {
+  animation: ab-live 2s infinite;
+}
+
+/* The filter panel drops in over 160ms. */
+@keyframes ab-drop {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+.ab-drop {
+  animation: ab-drop 0.16s ease-out;
+}
+
+/* Reduced motion (WCAG 2.3.3): the board's own pulses and drops stop, and so does every Tailwind or Nuxt UI transition and spinner.
+   A near-zero duration, not "none", so panels that wait for animationend still close. */
+@media (prefers-reduced-motion: reduce) {
+  .ab-drop,
+  .ab-live,
+  .ab-pulse {
+    animation: none;
+  }
+  .ab-search {
+    transition: none;
+  }
+  *,
+  * :before,
+  * :after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Segmented control (Columns, Group by, Swimlanes, Fleet | Table | Map). */
+.ab-seg {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--ab-seg-track);
+}
+.ab-seg > button,
+.ab-seg > a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text3);
+  cursor: pointer;
+}
+.ab-seg > [aria-pressed='true'],
+.ab-seg > [aria-current='page'] {
+  background: var(--ab-seg-on);
+  color: var(--color-ink);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08);
+}
+
+/* Ghost hover for bar buttons and filter rows. */
+.ab-ghost:hover,
+.ab-opt:hover,
+.ab-opt:focus-within {
+  background: var(--ab-row-hover);
+}
+
+/* Filter panel (Board v4): FilterPanel.vue picks columns or rail from the panel's own width (1180px). */
+.ab-panel {
+  container-type: inline-size;
+}
+/* Compact cards (Settings > Appearance): 9px by 10px padding, 6px gaps, 13px titles. Only the id, project, title, assignee and comment count stay; TaskCard.vue marks everything else .ab-full. */
+.ab-compact {
+  padding: 9px 10px !important;
+  gap: 6px !important;
+}
+.ab-compact h3 {
+  font-size: 13px !important;
+}
+.ab-compact .ab-full {
+  display: none !important;
+}
+
+/* Table: Project, Type, Due and Updated drop out under 1100px of table width. */
+.ab-tablewrap {
+  container-type: inline-size;
+}
+@container (max-width: 1099px) {
+  .ab-tcol-extra {
+    display: none;
+  }
+}
+
+/* Registry's filter panel (header refresh v3): Display sits on the right; below 1150px of panel width it becomes a strip across the bottom. */
+.ab-rpanel {
+  container-type: inline-size;
+}
+.ab-display {
+  border-left: 1px solid var(--color-line);
+}
+.ab-display-item {
+  flex: none;
+}
+@container (max-width: 1150px) {
+  .ab-display {
+    border-left: 0;
+    border-top: 1px solid var(--color-line);
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-end;
+  }
+  .ab-display-item {
+    flex: 1 1 180px;
+  }
+  .ab-display-title {
+    display: none;
+  }
+}

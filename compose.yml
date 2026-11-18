@@ -1,0 +1,18 @@
+# docker compose up: the board on http://localhost:3000, data in the "board-data" volume.
+# Run `pnpm run setup` first; it writes .env (secrets stay out of the image and out of git).
+services:
+  board:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file: .env
+    environment:
+      # The data folder inside the container; .env's relative .data paths are for running without Docker.
+      NUXT_BOARD_DB: /data/board.sqlite
+      NUXT_BOARD_ACCESS: /data/access.json
+    volumes:
+      - board-data:/data
+    restart: unless-stopped
+
+volumes:
+  board-data:

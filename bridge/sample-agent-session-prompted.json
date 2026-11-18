@@ -1,0 +1,13 @@
+{
+  "type": "AgentSessionEvent",
+  "action": "prompted",
+  "createdAt": "2026-11-12T16:05:00.000Z",
+  "organizationId": "00000000-0000-4000-8000-000000000001",
+  "webhookTimestamp": 0,
+  "webhookId": "00000000-0000-4000-8000-000000000004",
+  "agentSession": {
+    "id": "00000000-0000-4000-8000-000000000003",
+    "issue": { "identifier": "SAM-1", "title": "Sample issue: add a hello page" }
+  },
+  "agentActivity": { "body": "Use the existing layout, please." }
+}

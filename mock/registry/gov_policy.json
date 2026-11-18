@@ -1,0 +1,42 @@
+[
+  {
+    "agent_id": "agt-registrar",
+    "note": "Read-only agent",
+    "policy_id": "pol-9001",
+    "requires_approval": false,
+    "set_at": "2026-10-01T00:00:00.000Z",
+    "set_by": "Owner",
+    "start": "auto",
+    "task_type": "operational"
+  },
+  {
+    "agent_id": "agt-advisor-local",
+    "note": "Advice only",
+    "policy_id": "pol-9002",
+    "requires_approval": false,
+    "set_at": "2026-10-01T00:00:00.000Z",
+    "set_by": "Owner",
+    "start": "auto",
+    "task_type": "operational"
+  },
+  {
+    "agent_id": "agt-builder-local",
+    "note": "Builds need approval",
+    "policy_id": "pol-9003",
+    "requires_approval": true,
+    "set_at": "2026-10-01T00:00:00.000Z",
+    "set_by": "Owner",
+    "start": "manual",
+    "task_type": "build"
+  },
+  {
+    "agent_id": "agt-builder-local",
+    "note": "Upgrades need approval",
+    "policy_id": "pol-9004",
+    "requires_approval": true,
+    "set_at": "2026-10-01T00:00:00.000Z",
+    "set_by": "Owner",
+    "start": "manual",
+    "task_type": "upgrade"
+  }
+]

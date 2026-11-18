@@ -1,0 +1,19 @@
+[
+  {"column_id": "stg-backlog", "view": "stages", "name": "Backlog", "position": 1, "match": "stage=backlog", "hint": "You add ideas here", "roles_json": "[]"},
+  {"column_id": "stg-architecture", "view": "stages", "name": "Architecture", "position": 2, "match": "stage=architecture", "hint": "Agent researches + proposes", "roles_json": "[{\"role\":\"architect\",\"required\":true,\"agent_types\":[\"advisor\"],\"request_types\":[\"plan_container\",\"explain_spec\"],\"action\":\"read\",\"pool\":\"pool:advisor\"}]"},
+  {"column_id": "stg-build", "view": "stages", "name": "Build", "position": 3, "match": "stage=build", "hint": "Agents execute", "roles_json": "[{\"role\":\"builder\",\"required\":true,\"agent_types\":[\"builder\"],\"request_types\":[\"draft_workflow\"],\"action\":\"draft\",\"pool\":\"pool:builder\"},{\"role\":\"consult\",\"required\":false,\"agent_types\":[\"advisor\"],\"request_types\":[\"audit_container\",\"explain_spec\"],\"action\":\"read\",\"pool\":\"pool:advisor\"}]"},
+  {"column_id": "stg-review", "view": "stages", "name": "Review", "position": 4, "match": "stage=review", "hint": "Your sign-off", "roles_json": "[{\"role\":\"auditor\",\"required\":false,\"agent_types\":[\"advisor\"],\"request_types\":[\"audit_container\"],\"action\":\"read\",\"pool\":\"pool:advisor\"}]"},
+  {"column_id": "stg-done", "view": "stages", "name": "Done", "position": 5, "match": "stage=done", "hint": "Done, then archived", "roles_json": "[{\"role\":\"cleanup\",\"required\":true,\"assignee\":\"system\"}]"},
+  {"column_id": "st-backlog", "view": "states", "name": "Backlog", "position": 1, "match": "work_state=backlog", "hint": "Created, no assignee yet", "roles_json": "[]"},
+  {"column_id": "st-awaiting-start", "view": "states", "name": "Awaiting start", "position": 2, "match": "work_state=awaiting_start", "hint": "Assigned; manual or ask policy, or approval pending", "roles_json": "[]"},
+  {"column_id": "st-in-progress", "view": "states", "name": "In progress", "position": 3, "match": "work_state=in_progress", "hint": "A step is dispatched", "roles_json": "[]"},
+  {"column_id": "st-needs-input", "view": "states", "name": "Needs input", "position": 4, "match": "work_state=needs_input", "hint": "An agent or the orchestrator asked you a question", "roles_json": "[]"},
+  {"column_id": "st-blocked", "view": "states", "name": "Blocked or escalated", "position": 5, "match": "work_state=blocked", "hint": "A step failed or exhausted its budget", "roles_json": "[]"},
+  {"column_id": "st-verifying", "view": "states", "name": "Verifying", "position": 6, "match": "work_state=verifying", "hint": "All steps served; macro verification next", "roles_json": "[]"},
+  {"column_id": "st-done", "view": "states", "name": "Done", "position": 7, "match": "work_state=done", "hint": "Internal and macro verification pass", "roles_json": "[]"},
+  {"column_id": "flow-backlog", "view": "flow", "name": "Backlog", "position": 1, "match": "work_state=backlog", "hint": "You set the goal and priority", "roles_json": "[]"},
+  {"column_id": "flow-running", "view": "flow", "name": "Running", "position": 2, "match": "work_state=awaiting_start|in_progress", "hint": "Agents plan, build and check", "roles_json": "[]"},
+  {"column_id": "flow-needs-you", "view": "flow", "name": "Needs you", "position": 3, "match": "work_state=needs_input|blocked", "hint": "A question or a stuck card", "roles_json": "[]"},
+  {"column_id": "flow-review", "view": "flow", "name": "Review", "position": 4, "match": "work_state=verifying", "hint": "Passed its checks: accept or send back", "roles_json": "[]"},
+  {"column_id": "flow-done", "view": "flow", "name": "Done", "position": 5, "match": "work_state=done", "hint": "Signed off", "roles_json": "[]"}
+]

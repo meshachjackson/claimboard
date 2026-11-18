@@ -1,0 +1,241 @@
+# The runner's steps. Called only by runner-job.yml, never started on its own.
+# Rules this file follows (test/runner-workflow.test.ts checks them):
+#   - No `${{ }}` inside a `run:` script. Inputs reach scripts through `env:`, so text cannot become shell code.
+#   - The two egress steps (scripts/runner-egress.py) have no env and no secrets.
+#   - Secrets appear in exactly two places: ANTHROPIC_RUNNER_KEY in the env of the one runner step, and
+#     LOCAL_LAB_READ_TOKEN in the `token:` of the ops-repo checkout.
+#   - Every checkout sets persist-credentials: false, so no later step inherits a git token.
+#   - No permissions here. The job takes whatever the caller grants.
+name: Runner core
+
+on:
+  workflow_call:
+    inputs:
+      card_id:
+        type: string
+        required: true
+      spec_json:
+        type: string
+        required: true
+      runner_sha:
+        type: string
+        required: true
+      publish:
+        type: boolean
+        required: true
+      egress_allowlist:
+        type: boolean
+        required: false
+        default: false
+    # Phase C: read from job.json for the orchestrator's end callback in runner-job.yml. Empty when no record was written.
+    outputs:
+      state:
+        description: The job state from job.json, like passed or review_failed
+        value: ${{ jobs.runner.outputs.state }}
+      tokens_in:
+        description: Input tokens the job used (input plus cache creation)
+        value: ${{ jobs.runner.outputs.tokens_in }}
+      tokens_out:
+        description: Output tokens the job used
+        value: ${{ jobs.runner.outputs.tokens_out }}
+    secrets:
+      ANTHROPIC_RUNNER_KEY:
+        required: true
+      LOCAL_LAB_READ_TOKEN:
+        required: true
+
+jobs:
+  runner:
+    name: Runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      state: ${{ steps.record.outputs.state }}
+      tokens_in: ${{ steps.record.outputs.tokens_in }}
+      tokens_out: ${{ steps.record.outputs.tokens_out }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      WORK: ${{ github.workspace }}/work
+      # NEEDS MESHACH'S CONFIRMATION: the @anthropic-ai/claude-code version the runner uses. This is the latest on npm as
+      # of 11/2/2026 (published 10/31/2026), picked by Claude, not tested. Change it here and nowhere else.
+      CLAUDE_CODE_VERSION: 2.1.316
+    steps:
+      - name: Check inputs and write the spec file
+        env:
+          CARD_ID: ${{ inputs.card_id }}
+          RUNNER_SHA: ${{ inputs.runner_sha }}
+          SPEC_JSON: ${{ inputs.spec_json }}
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          [[ "$CARD_ID" =~ ^TSK-[0-9]{6}$ ]] || { echo "card_id must look like TSK-NNNNNN." >&2; exit 1; }
+          [[ "$RUNNER_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "runner_sha must be a full 40-character commit id." >&2; exit 1; }
+          mkdir -p "$WORK/out" "$WORK/state"
+          # The spec goes in through an env var and is parsed by Python, never put on a shell command line.
+          # The workflow's publish switch is the authority: it overwrites whatever the spec says.
+          python3 - <<'PY'
+          import json, os, sys
+          try:
+              spec = json.loads(os.environ["SPEC_JSON"])
+          except ValueError:
+              sys.exit("spec_json is not valid JSON.")
+          if not isinstance(spec, dict):
+              sys.exit("spec_json must be a JSON object.")
+          if spec.get("card_id", os.environ["CARD_ID"]) != os.environ["CARD_ID"]:
+              sys.exit("spec_json card_id does not match the card_id input.")
+          spec["card_id"] = os.environ["CARD_ID"]
+          spec["publish"] = os.environ["PUBLISH"] == "true"
+          with open(os.path.join(os.environ["WORK"], "spec.json"), "w") as f:
+              json.dump(spec, f)
+          PY
+
+      - name: Check out agent-board
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: work/code/agent-board
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Check out ops-repo at the pinned commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: ${{ vars.OPS_REPO }}
+          ref: ${{ inputs.runner_sha }}
+          token: ${{ secrets.LOCAL_LAB_READ_TOKEN }}
+          path: work/ops-repo
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Refuse to run if a checkout kept a credential
+        run: |
+          bad=0
+          for repo in "$WORK/code/agent-board" "$WORK/ops-repo"; do
+            # Checkout v6 can keep its token in a separate file that .git/config points to, so look for include too.
+            if git -C "$repo" config --local --list | grep -Eiq 'extraheader|credential|^include|insteadof'; then
+              echo "A credential or include is set in the git config of $repo." >&2
+              bad=1
+            fi
+          done
+          [ "$bad" = 0 ]
+
+      - name: Set up Node (version from agent-board .nvmrc)
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: work/code/agent-board/.nvmrc
+
+      - name: Install pnpm and the Claude Code CLI (exact versions, from the npm registry)
+        run: |
+          pnpm_version=$(node -p "require('$WORK/code/agent-board/package.json').packageManager.split('@')[1]")
+          [[ "$pnpm_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Could not read an exact pnpm version from package.json." >&2; exit 1; }
+          npm install -g --no-audit --no-fund "pnpm@$pnpm_version" "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION"
+          node --version
+          pnpm --version
+          claude --version
+
+      - name: Check for GNU time
+        run: |
+          if [ ! -x /usr/bin/time ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends time
+          fi
+
+      # Egress allowlist (phase B). On for every publish run, and for a no-push run when egress_allowlist is true (so it can
+      # be tested first). It sits right before the harness step and nowhere earlier, because the install and checkout
+      # steps need hosts the list does not have. scripts/runner-egress.py comes from the agent-board checkout, not from
+      # ops-repo: it is small, runs here only, and this repo's test can read it. No secrets in this step's env.
+      # `timeout` and timeout-minutes stop a stuck step. The script rejects (not drops) blocked traffic, and removes its
+      # own rules if anything fails. The cleanup step after the harness removes them again whatever happens.
+      - name: Limit outbound hosts
+        if: ${{ inputs.publish || inputs.egress_allowlist }}
+        timeout-minutes: 3
+        run: |
+          # The summary is written on success and on failure, so a refused host is named in both places.
+          write_summary() {
+            {
+              echo "## Egress allowlist"
+              echo "Hosts: \`$(grep -vE '^\s*(#|$)' "$WORK/code/agent-board/scripts/runner-egress-hosts.txt" | paste -sd' ' -)\`"
+              grep -E '^(egress filter|self-check|github ranges|did not resolve)' "$WORK/egress.txt" | sed 's/^/- /' || echo "- no result line was written"
+            } >> "$GITHUB_STEP_SUMMARY"
+          }
+          trap write_summary EXIT
+          # Fetches GitHub's /meta ranges and resolves names first, then switches the filter on, then connects to each
+          # needed host. It exits 1 (and removes its rules) if any step fails. bash runs with pipefail, so tee does not hide that.
+          sudo timeout 120 python3 "$WORK/code/agent-board/scripts/runner-egress.py" apply \
+            --hosts "$WORK/code/agent-board/scripts/runner-egress-hosts.txt" 2>&1 | tee -a "$WORK/egress.txt"
+
+      - name: Run the job
+        env:
+          LONNIE_PROFILE: github-actions
+          LONNIE_CODE_ROOT: ${{ github.workspace }}/work/code
+          LONNIE_STATE_DIR: ${{ github.workspace }}/work/state
+          LONNIE_ANTHROPIC_KEY: ${{ secrets.ANTHROPIC_RUNNER_KEY }}
+          # The job's own short-lived token, for a publish run only. Empty otherwise, and removed below.
+          LONNIE_GITHUB_TOKEN: ${{ inputs.publish && github.token || '' }}
+        run: |
+          [ -n "$LONNIE_GITHUB_TOKEN" ] || unset LONNIE_GITHUB_TOKEN
+          cd "$WORK/ops-repo/runner"
+          # /usr/bin/time -v reports the largest single process the run started, not the sum of all of them.
+          /usr/bin/time -v -o "$WORK/time.txt" python3 -m lonnie.cli --spec "$WORK/spec.json" --out "$WORK/out"
+
+      - name: Remove the outbound limit
+        if: ${{ always() && (inputs.publish || inputs.egress_allowlist) }}
+        timeout-minutes: 3
+        run: sudo timeout 120 python3 "$WORK/code/agent-board/scripts/runner-egress.py" remove
+
+      - name: Write the run summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "## Runner job"
+            if [ -f "$WORK/out/job.json" ]; then
+              state=$(python3 -c "import json,sys,re; s=str(json.load(open(sys.argv[1])).get('state','')); print(s if re.fullmatch(r'[a-z_]{1,32}', s) else 'unreadable')" "$WORK/out/job.json" || echo unreadable)
+              echo "- State: \`$state\`"
+            else
+              echo "- State: no job.json was written"
+            fi
+            if [ -f "$WORK/time.txt" ]; then
+              peak_kb=$(awk -F': ' '/Maximum resident set size/ {print $2}' "$WORK/time.txt")
+              wall=$(awk -F'): ' '/Elapsed \(wall clock\)/ {print $2}' "$WORK/time.txt")
+              echo "- Wall time: ${wall:-unknown}"
+              echo "- Peak memory (largest process): $(( ${peak_kb:-0} / 1024 )) MB of about 8000 MB on this runner"
+            fi
+            if [ -f "$WORK/out/summary.md" ]; then
+              echo
+              echo "### Job summary"
+              head -c 20000 "$WORK/out/summary.md"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Read the job record for the orchestrator's callback
+        id: record
+        if: ${{ always() }}
+        run: |
+          # Only checked values leave this step: a short lowercase state and two whole numbers.
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os, re
+          try:
+              job = json.load(open(os.path.join(os.environ["WORK"], "out", "job.json")))
+          except (OSError, ValueError):
+              job = {}
+          state = str(job.get("state", ""))
+          print("state=" + (state if re.fullmatch(r"[a-z_]{1,32}", state) else ""))
+          tokens = job.get("tokens") if isinstance(job.get("tokens"), dict) else {}
+          for key in ("tokens_in", "tokens_out"):
+              v = tokens.get(key)
+              print(key + "=" + (str(v) if isinstance(v, int) and v >= 0 else ""))
+          PY
+
+      - name: Upload the results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: runner-${{ inputs.card_id }}-${{ github.run_id }}
+          path: work/out/
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Fail if the job record is missing
+        if: ${{ always() }}
+        run: |
+          [ -f "$WORK/out/job.json" ] || { echo "No job.json in out/. The runner failed before it could record the job." >&2; exit 1; }

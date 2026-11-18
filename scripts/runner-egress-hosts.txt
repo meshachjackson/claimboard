@@ -1,0 +1,14 @@
+# Hosts the runner job may reach on port 443 while the harness step runs (phase B egress allowlist).
+# One host per line. Adding a host is a security change: it needs Meshach's go-ahead.
+# scripts/runner-egress.py resolves each name to IPv4 addresses (three passes, joined) right before the harness step.
+# github.com and api.github.com also get GitHub's git, api and web ranges from https://api.github.com/meta.
+# After the rules are in, the script connects to github.com, api.github.com, api.anthropic.com and registry.npmjs.org.
+#
+# What the job needs:
+github.com
+api.github.com
+api.anthropic.com
+registry.npmjs.org
+# Log streaming to the Actions service. The docs list this name (and the wildcard *.actions.githubusercontent.com,
+# which cannot be resolved). The runner's open connections are allowed separately by the script.
+results-receiver.actions.githubusercontent.com

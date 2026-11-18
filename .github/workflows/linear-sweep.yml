@@ -1,0 +1,56 @@
+# The sweep: on a schedule (every 15 minutes by default), start a linear-agent.yml run for each Linear issue that is delegated to a cloud agent (Architect,
+# Builder (cloud), Verifier) in a cloud_repos repo and has no run queued or running. It catches a webhook that never arrived and a
+# dispatch that failed. Same kill switch (repo variable AGENT_LOOP_ENABLED) and daily run limit as the job.
+# The code: scripts/linear-job.mjs --sweep. Docs: docs/linear-runner.md, "Cloud worker".
+name: Linear sweep
+
+# The schedule is picked by the repo variable LINEAR_SWEEP_CRON: one of the three crons below (default '*/15 * * * *').
+# GitHub cannot read a cron from a variable, so all three fire and the job runs only for the chosen one. A job skipped by its
+# `if` is not billed, so the two unchosen crons cost no Actions minutes. Each sweep that runs bills at least one minute:
+# every 15 minutes is about 96 minutes a day, every hour about 24.
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+    - cron: '*/30 * * * *'
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+# One sweep at a time, so two sweeps never start the same issue twice.
+concurrency:
+  group: linear-sweep
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    name: Sweep
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The kill switch and the chosen schedule, checked before anything runs (and before anything is billed).
+    if: ${{ vars.AGENT_LOOP_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || github.event.schedule == (vars.LINEAR_SWEEP_CRON || '*/15 * * * *')) }}
+    permissions:
+      contents: read
+      actions: write # read the runs and start linear-agent.yml (a GITHUB_TOKEN may start a workflow_dispatch run)
+    steps:
+      - name: Check out agent-board
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Node 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+
+      - name: Start a run for each waiting issue
+        env:
+          AGENT_LOOP_ENABLED: ${{ vars.AGENT_LOOP_ENABLED }}
+          GITHUB_TOKEN: ${{ github.token }}
+          LINEAR_ARCHITECT_CLIENT_ID: ${{ secrets.LINEAR_ARCHITECT_CLIENT_ID }}
+          LINEAR_ARCHITECT_CLIENT_SECRET: ${{ secrets.LINEAR_ARCHITECT_CLIENT_SECRET }}
+          LINEAR_BUILDER_CLIENT_ID: ${{ secrets.LINEAR_BUILDER_CLIENT_ID }}
+          LINEAR_BUILDER_CLIENT_SECRET: ${{ secrets.LINEAR_BUILDER_CLIENT_SECRET }}
+          LINEAR_VERIFIER_CLIENT_ID: ${{ secrets.LINEAR_VERIFIER_CLIENT_ID }}
+          LINEAR_VERIFIER_CLIENT_SECRET: ${{ secrets.LINEAR_VERIFIER_CLIENT_SECRET }}
+        run: node scripts/linear-job.mjs --sweep

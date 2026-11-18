@@ -1,0 +1,153 @@
+{
+  "captured_at": "2026-10-25T15:15:00.000Z",
+  "sources": [
+    {
+      "id": "hosted",
+      "label": "Hosted n8n",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "laptop",
+      "label": "Laptop n8n",
+      "ok": false,
+      "note": "Not read by the drift loader"
+    }
+  ],
+  "agents": {
+    "agt-registrar": {
+      "model": "claude-haiku-5-5",
+      "active_version": "88884e0f",
+      "tools": [
+        "run_ticket",
+        "get_ticket"
+      ],
+      "skills": [
+        "run-request"
+      ],
+      "sub_agents": [],
+      "channels": [],
+      "triggers": [],
+      "versions": [
+        {
+          "version_id": "88884e0f",
+          "published_at": "2026-10-14T00:00:00.000Z",
+          "by": "Owner",
+          "active": true,
+          "date_only": true
+        }
+      ]
+    },
+    "agt-orchestrator": {
+      "model": "[model from snapshot]",
+      "active_version": "6d7a1a6a",
+      "tools": [],
+      "skills": [],
+      "sub_agents": [
+        "agt-registrar",
+        "agt-advisor-hosted"
+      ],
+      "channels": [
+        "chat"
+      ],
+      "triggers": [
+        "chat",
+        "workflow"
+      ],
+      "versions": [
+        {
+          "version_id": "6d7a1a6a",
+          "published_at": "2026-10-25T01:56:00.000Z",
+          "by": "Owner",
+          "active": true
+        }
+      ]
+    },
+    "agt-advisor-hosted": {
+      "model": "[model from snapshot]",
+      "active_version": "67346bee",
+      "tools": [],
+      "skills": [],
+      "sub_agents": [],
+      "channels": [],
+      "triggers": [],
+      "versions": [
+        {
+          "version_id": "67346bee",
+          "published_at": "2026-10-25T17:01:00.000Z",
+          "by": "Owner",
+          "active": true
+        },
+        {
+          "version_id": "1c69ff22",
+          "published_at": "2026-10-20T17:01:00.000Z",
+          "by": "Owner",
+          "active": false
+        }
+      ]
+    }
+  },
+  "containers": {
+    "agt-advisor-local": {
+      "container": "advisor container",
+      "captured_at": "2026-10-12T04:58:49.812Z",
+      "checks": [
+        {
+          "name": "Components exist, named right",
+          "pass": true
+        },
+        {
+          "name": "Caller policy locked",
+          "pass": true
+        },
+        {
+          "name": "Verifier gets ticket and output only",
+          "pass": true
+        }
+      ],
+      "unregistered_flag": false
+    },
+    "agt-builder-local": {
+      "container": "builder container",
+      "captured_at": "2026-10-12T04:58:49.812Z",
+      "checks": [
+        {
+          "name": "Components exist, named right",
+          "pass": true
+        },
+        {
+          "name": "Caller policy locked",
+          "pass": true
+        },
+        {
+          "name": "Verifier gets ticket and output only",
+          "pass": true
+        }
+      ],
+      "unregistered_flag": false
+    }
+  },
+  "unregistered": [
+    {
+      "name": "[workflow name from snapshot]",
+      "environment": "hosted",
+      "kind": "workflow",
+      "review_id": "rev-900003",
+      "synthetic": true
+    },
+    {
+      "name": "[workflow name from snapshot]",
+      "environment": "hosted",
+      "kind": "workflow",
+      "review_id": "rev-900003",
+      "synthetic": true
+    },
+    {
+      "name": "[workflow name from snapshot]",
+      "environment": "hosted",
+      "kind": "workflow",
+      "review_id": "rev-900003",
+      "synthetic": true
+    }
+  ]
+}

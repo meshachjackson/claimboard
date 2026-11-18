@@ -1,0 +1,190 @@
+# Drago's code runner on GitHub Actions: the entry point.
+# Plan: docs/plans/2026-11-02-actions-runner.md. How to use it: docs/runner-actions.md.
+#
+# Start by hand from the Actions tab (phase A) or later from n8n (phase C). Nothing else triggers it.
+# The steps live in runner-core.yml. This file only decides which permissions the job gets:
+#   - publish = false: the job gets `contents: read` and nothing else. It cannot push, even by mistake.
+#   - publish = true:  the job also gets `contents: write` and `pull-requests: write` (phase B).
+# GitHub cannot make one job's permissions depend on an input, so there are two thin jobs, and only one runs.
+# A called workflow can lower its caller's permissions but never raise them.
+# The two secrets are passed by name (not `secrets: inherit`), so the called workflow sees nothing else.
+# Phase C: two small jobs post signed callbacks to the orchestrator (scripts/runner-callback.py): `started` once the guard passes,
+# and `served` or `failed` at the end, always (the runner plan, section 4). The callback secrets live only in those two jobs, never in the job
+# that runs the model.
+name: Runner job
+
+on:
+  workflow_dispatch:
+    inputs:
+      card_id:
+        description: Board card id, like TSK-NNNNNN
+        type: string
+        required: true
+      spec_json:
+        description: The job spec, as one JSON object
+        type: string
+        required: true
+      publish:
+        description: Phase B only. Push a claude/ branch and open a draft PR.
+        type: boolean
+        default: false
+      runner_sha:
+        description: The ops-repo commit to run (40 hex characters, pinned on purpose)
+        type: string
+        required: true
+      egress_allowlist:
+        description: Limit outbound hosts for the harness step. Always on when publish is on. Turn it on in a no-push run to test it.
+        type: boolean
+        default: false
+      job_id:
+        description: The orchestrator's job id (phase C). Letters, digits, - and _ only. Used to address the callbacks.
+        type: string
+        required: true
+      step_id:
+        description: The board step this job works, like STP-NNNNNN (phase C). Used to address the callbacks.
+        type: string
+        required: true
+
+# Nothing by default. Each job below asks for exactly what it needs.
+permissions: {}
+
+# Jobs run in parallel, each on its own GitHub runner. The orchestrator's pool cap (`board.concurrency`, the runner plan, section 7)
+# decides how many run at once, not this file. The group is per job_id, so a job dispatched twice by mistake runs once:
+# the copy waits, and GitHub cancels it if a third copy arrives. A single repo-wide group would let GitHub cancel
+# a different job that was waiting, with no callback to the orchestrator.
+concurrency:
+  group: runner-job-${{ inputs.job_id }}
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    name: Guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check branch and publish switch
+        env:
+          REF: ${{ github.ref }}
+          PUBLISH: ${{ inputs.publish }}
+          PUBLISH_ENABLED: ${{ vars.RUNNER_PUBLISH_ENABLED }}
+          JOB_ID: ${{ inputs.job_id }}
+          STEP_ID: ${{ inputs.step_id }}
+        run: |
+          # The callback ids are checked here so a bad one stops the run before anything starts.
+          [[ "$JOB_ID" =~ ^[A-Za-z0-9_-]{1,64}$ ]] || { echo "job_id may hold only letters, digits, - and _ (64 at most)." >&2; exit 1; }
+          [[ "$STEP_ID" =~ ^STP-[0-9]{6,}$ ]] || { echo "step_id must look like STP-NNNNNN." >&2; exit 1; }
+          # Secrets go to whatever workflow file is on the dispatched branch, so only main may run.
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "Dispatch this workflow from main only (got $REF)." >&2
+            exit 1
+          fi
+          # Phase B stays closed until Meshach sets the repo variable RUNNER_PUBLISH_ENABLED to true.
+          # He does that after a no-push run with egress_allowlist on has passed (see docs/runner-actions.md).
+          if [ "$PUBLISH" = "true" ] && [ "$PUBLISH_ENABLED" != "true" ]; then
+            echo "Publish is not enabled yet. Phase B needs the egress allowlist and the RUNNER_PUBLISH_ENABLED variable." >&2
+            exit 1
+          fi
+
+  callback-start:
+    name: Tell the orchestrator the job started
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the callback script
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          sparse-checkout: scripts/runner-callback.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Post the start callback
+        env:
+          VERA_CALLBACK_URL: ${{ secrets.VERA_CALLBACK_URL }}
+          CALLBACK_HEADER_PREFIX: ${{ vars.CALLBACK_HEADER_PREFIX }}
+          VERA_CALLBACK_SECRET: ${{ secrets.VERA_CALLBACK_SECRET }}
+          JOB_ID: ${{ inputs.job_id }}
+          STEP_ID: ${{ inputs.step_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 -I scripts/runner-callback.py --job-id "$JOB_ID" --step-id "$STEP_ID" --status started --output-ref "$RUN_URL"
+
+  run-readonly:
+    name: Run (no push)
+    needs: guard
+    if: ${{ !inputs.publish }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/runner-core.yml
+    with:
+      card_id: ${{ inputs.card_id }}
+      spec_json: ${{ inputs.spec_json }}
+      runner_sha: ${{ inputs.runner_sha }}
+      publish: false
+      egress_allowlist: ${{ inputs.egress_allowlist }}
+    secrets:
+      ANTHROPIC_RUNNER_KEY: ${{ secrets.ANTHROPIC_RUNNER_KEY }}
+      LOCAL_LAB_READ_TOKEN: ${{ secrets.LOCAL_LAB_READ_TOKEN }}
+
+  run-publish:
+    name: Run (push and draft PR)
+    needs: guard
+    if: ${{ inputs.publish }}
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: ./.github/workflows/runner-core.yml
+    with:
+      card_id: ${{ inputs.card_id }}
+      spec_json: ${{ inputs.spec_json }}
+      runner_sha: ${{ inputs.runner_sha }}
+      publish: true
+      egress_allowlist: true
+    secrets:
+      ANTHROPIC_RUNNER_KEY: ${{ secrets.ANTHROPIC_RUNNER_KEY }}
+      LOCAL_LAB_READ_TOKEN: ${{ secrets.LOCAL_LAB_READ_TOKEN }}
+
+  callback-end:
+    name: Tell the orchestrator how the job ended
+    needs:
+      - guard
+      - run-readonly
+      - run-publish
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the callback script
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          sparse-checkout: scripts/runner-callback.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Post the end callback
+        env:
+          VERA_CALLBACK_URL: ${{ secrets.VERA_CALLBACK_URL }}
+          CALLBACK_HEADER_PREFIX: ${{ vars.CALLBACK_HEADER_PREFIX }}
+          VERA_CALLBACK_SECRET: ${{ secrets.VERA_CALLBACK_SECRET }}
+          JOB_ID: ${{ inputs.job_id }}
+          STEP_ID: ${{ inputs.step_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          READONLY_RESULT: ${{ needs.run-readonly.result }}
+          PUBLISH_RESULT: ${{ needs.run-publish.result }}
+          STATE: ${{ needs.run-readonly.outputs.state || needs.run-publish.outputs.state }}
+          TOKENS_IN: ${{ needs.run-readonly.outputs.tokens_in || needs.run-publish.outputs.tokens_in }}
+          TOKENS_OUT: ${{ needs.run-readonly.outputs.tokens_out || needs.run-publish.outputs.tokens_out }}
+        run: |
+          # Only one run job runs; the other is skipped. served means that job finished and its record says it did
+          # its whole job: passed for a no-push run, published for a publish run (ops-repo publish.py sets
+          # published, or publish_failed). A guard failure, a cancelled or failed run, or any other state is failed.
+          status=failed
+          if [ "$READONLY_RESULT" = success ] && [ "$STATE" = passed ]; then
+            status=served
+          elif [ "$PUBLISH_RESULT" = success ] && [ "$STATE" = published ]; then
+            status=served
+          fi
+          python3 -I scripts/runner-callback.py --job-id "$JOB_ID" --step-id "$STEP_ID" --status "$status" \
+            --output-ref "$RUN_URL" --tokens-in "$TOKENS_IN" --tokens-out "$TOKENS_OUT"

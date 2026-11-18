@@ -1,0 +1,6 @@
+{
+  "architect": { "kind": "http", "target": "https://REPLACE-ME.example/architect-hook" },
+  "builder-laptop": { "kind": "laptop-poll", "target": "none: scripts/linear-run.mjs polls Linear itself" },
+  "builder-cloud": { "kind": "claude-cloud", "target": "https://REPLACE-ME.example/cloud-builder-hook" },
+  "verifier": { "kind": "n8n-workflow", "target": "https://REPLACE-ME.example/webhook/verifier" }
+}
